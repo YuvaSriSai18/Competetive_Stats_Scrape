@@ -1,50 +1,61 @@
-import json
+from flask import Flask, request, jsonify
 from modules.codechef_module import get_codechef_stars
 from modules.geeks_for_geeks_module import get_gfg_stats
 from modules.github_module import get_github_profile
 from modules.leetcode_module import get_leetcode_solved
 
-def get_all_stats(gfg_username, leetcode_username, codechef_username, github_username):
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ API is running. Use `/stats` with query params."
+
+@app.route("/stats", methods=["GET"])
+def get_all_stats():
+    gfg_username = request.args.get("gfg")
+    leetcode_username = request.args.get("lc")
+    codechef_username = request.args.get("cc")
+    github_username = request.args.get("gh")
+
     result = {}
 
     try:
-        gfg_data = get_gfg_stats(gfg_username)
-        result["geeksforgeeks"] = gfg_data if "error" not in gfg_data else {"error": gfg_data["error"]}
+        if gfg_username:
+            gfg_data = get_gfg_stats(gfg_username)
+            result["geeksforgeeks"] = gfg_data if "error" not in gfg_data else {"error": gfg_data["error"]}
+        else:
+            result["geeksforgeeks"] = {"error": "No GFG username provided"}
     except Exception as e:
         result["geeksforgeeks"] = {"error": str(e)}
 
     try:
-        lc_data = get_leetcode_solved(leetcode_username)
-        result["leetcode"] = lc_data.get("leetcode", {"error": "Failed to parse LeetCode data"})
+        if leetcode_username:
+            lc_data = get_leetcode_solved(leetcode_username)
+            result["leetcode"] = lc_data.get("leetcode", {"error": "Failed to parse LeetCode data"})
+        else:
+            result["leetcode"] = {"error": "No LeetCode username provided"}
     except Exception as e:
         result["leetcode"] = {"error": str(e)}
 
     try:
-        cc_data = get_codechef_stars(codechef_username)
-        result["codechef"] = cc_data.get("codechef", {"error": "Failed to parse CodeChef data"})
+        if codechef_username:
+            cc_data = get_codechef_stars(codechef_username)
+            result["codechef"] = cc_data.get("codechef", {"error": "Failed to parse CodeChef data"})
+        else:
+            result["codechef"] = {"error": "No CodeChef username provided"}
     except Exception as e:
         result["codechef"] = {"error": str(e)}
 
     try:
-        gh_data = get_github_profile(github_username)
-        result["github"] = gh_data.get("github", {"error": "Failed to parse GitHub data"})
+        if github_username:
+            gh_data = get_github_profile(github_username)
+            result["github"] = gh_data.get("github", {"error": "Failed to parse GitHub data"})
+        else:
+            result["github"] = {"error": "No GitHub username provided"}
     except Exception as e:
         result["github"] = {"error": str(e)}
 
-    return result
+    return jsonify(result)
 
-# ✅ Example usage
 if __name__ == "__main__":
-    gfg_username = "yuvasrisai18"
-    leetcode_username = "Yuva_SriSai_18"
-    codechef_username = "yuvasrisai"
-    github_username = "YuvaSriSai18"
-
-    profile_stats = get_all_stats(
-        gfg_username=gfg_username,
-        leetcode_username=leetcode_username,
-        codechef_username=codechef_username,
-        github_username=github_username
-    )
-
-    print(json.dumps(profile_stats, indent=4))
+    app.run(host="0.0.0.0", port=5000)

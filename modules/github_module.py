@@ -1,33 +1,44 @@
+import os
 import requests
 
 def get_github_profile(username):
-    url = f"https://api.github.com/users/{username}"
+    print(username)
+    if not username or not username.strip():
+        return {"github": {"error": "Invalid or empty username"}}
+
+    url = f"https://api.github.com/users/{username.strip()}"
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    # print("📨 URL:", url)
+    print("📨 Headers:", headers)
+
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return {"github": {"public_repos": None}}
+        print("📡 Status:", response.status_code)
+        # print("📦 Response:", response.text)
+
+        if response.status_code == 400:
+            return {"github": {"error": "Bad Request — Check the username"}}
+        elif response.status_code == 404:
+            return {"github": {"error": "User not found"}}
+        elif response.status_code == 403:
+            return {"github": {"error": "Rate limit exceeded or forbidden"}}
+        elif response.status_code != 200:
+            return {"github": {"error": f"HTTP {response.status_code} \n" , "message": f"{response.json}"}}
 
         data = response.json()
         return {
             "github": {
-                # "name": data.get("name"),
-                # "bio": data.get("bio"),
-                "public_repos": data.get("public_repos"),
-                # "followers": data.get("followers"),
-                # "following": data.get("following"),
-                # "avatar_url": data.get("avatar_url"),
-                # "profile_url": data.get("html_url")
+                "public_repos": data.get("public_repos", 0)
             }
         }
 
     except Exception as e:
-        return {"github": {"public_repos": None}}
-
-# 🔧 Example usage
-if __name__ == "__main__":
-    username = "YuvaSriSai18"
-    print(get_github_profile(username))
+        return {"github": {"error": str(e)}}

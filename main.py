@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from modules.codechef_module import get_codechef_stars
 from modules.geeks_for_geeks_module import get_gfg_stats
 from modules.github_module import get_github_profile
 from modules.leetcode_module import get_leetcode_solved
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route("/")
 def home():

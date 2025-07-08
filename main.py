@@ -9,25 +9,6 @@ app = Flask(__name__)
 @app.route("/")
 def home():
     return "✅ API is running. Use `/stats` with query params."
-# @app.route("/debug/github", methods=["GET"])
-# def debug_github():
-#     try:
-#         username = request.args.get("user")
-
-#         if not username:
-#             return jsonify({"error": "No username provided"}), 400
-
-#         from modules.github_module import get_github_profile
-#         print(f"🔍 Calling get_github_profile with username: {username}")
-        
-#         result = get_github_profile(username)
-#         print(f"📦 GitHub profile result: {result}")
-        
-#         return jsonify(result)
-
-#     except Exception as e:
-#         print("❌ Exception in /debug/github:", str(e))
-#         return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 @app.route("/stats", methods=["GET"])
 def get_all_stats():
@@ -76,5 +57,11 @@ def get_all_stats():
 
     return jsonify(result)
 
+# No need to include app.run() here; Gunicorn handles it in production
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

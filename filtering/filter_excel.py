@@ -170,14 +170,14 @@ def validate_leetcode_username(username):
 def process_row_threaded(row, idx, total_rows, platforms, results_dict, results_lock):
     """Process a single row in a thread"""
     try:
-        print(f"\n[{idx + 1}/{total_rows}] Processing {row.get('rollNo', 'Unknown')}...")
+        print(f"\n[{idx + 1}/{total_rows}] Processing {row.get('RollNo', 'Unknown')}...")
         
         # Process the row
         result = process_single_profile(row.to_dict(), platforms)
         
         # Create output row
         output_row = {
-            'rollNo': row.get('rollNo', ''),
+            'RollNo': row.get('RollNo', ''),
             'email': row.get('email', ''),
             'name': row.get('name', ''),
             'leetcode(username)': result.get('leetcode_username', 'NA'),
@@ -196,7 +196,7 @@ def process_row_threaded(row, idx, total_rows, platforms, results_dict, results_
         # Create error row
         with results_lock:
             results_dict[idx] = {
-                'rollNo': row.get('rollNo', ''),
+                'RollNo': row.get('RollNo', ''),
                 'email': row.get('email', ''),
                 'name': row.get('name', ''),
                 'leetcode(username)': 'ERROR',
@@ -273,7 +273,8 @@ def main():
     print(">> Starting Profile Validation Process...")
     
     # Input and output file paths
-    input_file = "filtered_data.csv"
+    input_file = r"D:\Projects\Personel\Competetive_Stats_Scrape\filtering\filtering.csv"
+    # output_file = r"D:\Projects\Personel\Competetive_Stats_Scrape\filtering\data.csv"
     output_file = "data.csv"
     
     try:
@@ -284,7 +285,7 @@ def main():
         
         # Normalize column names to match expected format
         column_mapping = {
-            'RollNo': 'rollNo',
+            'RollNo': 'RollNo',
             'email': 'email', 
             'Name': 'name',
             'LeetCode': 'leetcode',

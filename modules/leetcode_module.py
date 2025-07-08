@@ -22,33 +22,35 @@ def get_leetcode_solved(username):
 
     headers = {
         "Content-Type": "application/json",
-        "Referer": f"https://leetcode.com/u/{username}/",
+        "Referer": f"https://leetcode.com/{username}/",
         "User-Agent": "Mozilla/5.0"
     }
 
     try:
         response = requests.post(url, json=query, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            stats = data["data"]["matchedUser"]
-
-            if not stats:
-                return {"leetcode": {"easy": None, "medium": None, "hard": None, "total": None}}
-
-            counts = data["data"]["matchedUser"]["submitStats"]["acSubmissionNum"]
-            difficulty_counts = {item["difficulty"]: item["count"] for item in counts}
-
-            return {
-                "leetcode": {
-                    "easy": difficulty_counts.get("Easy", 0),
-                    "medium": difficulty_counts.get("Medium", 0),
-                    "hard": difficulty_counts.get("Hard", 0),
-                    "total": sum(difficulty_counts.values())
-                }
-            }
-        else:
+        response.raise_for_status()
+        data = response.json()
+        matched_user = data.get("data", {}).get("matchedUser")
+        if not matched_user or not matched_user.get("submitStats"):
             return {"leetcode": {"easy": None, "medium": None, "hard": None, "total": None}}
-    except Exception:
+
+        counts = matched_user["submitStats"].get("acSubmissionNum", [])
+        difficulty_counts = {item["difficulty"]: item["count"] for item in counts}
+        
+        easy = difficulty_counts.get("Easy", 0)
+        medium = difficulty_counts.get("Medium", 0)
+        hard = difficulty_counts.get("Hard", 0)
+
+        return {
+            "leetcode": {
+                "easy": easy,
+                "medium": medium,
+                "hard": hard,
+                "total": easy + medium + hard
+            }
+        }
+    except Exception as e:
+        print(f"Error fetching LeetCode stats: {e}")
         return {"leetcode": {"easy": None, "medium": None, "hard": None, "total": None}}
 
 # 🔧 Example usage

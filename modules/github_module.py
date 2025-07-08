@@ -1,5 +1,9 @@
 import os
 import requests
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file if present (development use)
+load_dotenv()
 
 def get_github_profile(username):
     print(username)
@@ -16,13 +20,11 @@ def get_github_profile(username):
     if token:
         headers["Authorization"] = f"token {token}"
 
-    # print("📨 URL:", url)
     print("📨 Headers:", headers)
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
         print("📡 Status:", response.status_code)
-        # print("📦 Response:", response.text)
 
         if response.status_code == 400:
             return {"github": {"error": "Bad Request — Check the username"}}
@@ -31,7 +33,7 @@ def get_github_profile(username):
         elif response.status_code == 403:
             return {"github": {"error": "Rate limit exceeded or forbidden"}}
         elif response.status_code != 200:
-            return {"github": {"error": f"HTTP {response.status_code} \n" , "message": f"{response.json}"}}
+            return {"github": {"error": f"HTTP {response.status_code}", "message": response.text}}
 
         data = response.json()
         return {

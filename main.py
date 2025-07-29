@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from modules.codechef_module import get_codechef_stars
+from modules.codechef_module import get_codechef_profile
 from modules.geeks_for_geeks_module import get_gfg_stats
 from modules.github_module import get_github_profile
 from modules.leetcode_module import get_leetcode_full_profile
@@ -33,12 +33,26 @@ def leetcode_stats():
 def codechef_stats():
     username = request.args.get("username")
     if not username:
-        return jsonify({"error": "Missing CodeChef username"}), 400
-    try:
-        stats = get_codechef_stars(username)
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Missing username"}), 400
+
+    result = get_codechef_profile(username)
+    
+    if "error" in result.get("codechef", {}):
+        return jsonify({"error": result["codechef"]["error"]}), 500
+
+    data = result.get("codechef", {})
+
+    return jsonify({
+        "calendar": data.get("calendar", {}),
+        "profile": {
+            "stars": data.get("stars", 0),
+            "rating": data.get("rating", None),
+            "max_rating": data.get("max_rating", None),
+            "problems_solved": data.get("problems_solved", 0),
+            "contests_participated": data.get("contests_participated", 0)
+        }
+    }), 200
+
 
 # --- GeeksforGeeks API ---
 @app.route("/gfg", methods=["GET"])

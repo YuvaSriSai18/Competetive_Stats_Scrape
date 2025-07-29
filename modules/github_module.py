@@ -79,8 +79,7 @@ def get_github_profile(username):
                     for day in week["contributionDays"]:
                         date = day["date"]
                         count = day["contributionCount"]
-                        if count > 0:
-                            calendar[date] = count
+                        calendar[date] = count  # INCLUDE even if count is 0
 
         except Exception as e:
             print(f"[GraphQL Error] {e}")

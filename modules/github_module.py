@@ -20,11 +20,11 @@ def get_github_profile(username):
     if token:
         headers["Authorization"] = f"token {token}"
 
-    print("📨 Headers:", headers)
+    # print("📨 Headers:", headers)
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
-        print("📡 Status:", response.status_code)
+        # print("📡 Status:", response.status_code)
 
         if response.status_code == 400:
             return {"github": {"error": "Bad Request — Check the username"}}

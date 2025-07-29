@@ -8,6 +8,7 @@ GITHUB_GRAPHQL = "https://api.github.com/graphql"
 GITHUB_REST = "https://api.github.com/users"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 
+
 def get_github_profile(username):
     username = username.strip()
     if not username:
@@ -15,20 +16,25 @@ def get_github_profile(username):
 
     # --- Step 1: Get public repos using REST API ---
     rest_url = f"{GITHUB_REST}/{username}"
-    public_repos = None
+    public_repos = 0  # Default fallback
 
     try:
         rest_headers = {"User-Agent": "Mozilla/5.0"}
+        if GITHUB_TOKEN:
+            rest_headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
         rest_resp = requests.get(rest_url, headers=rest_headers, timeout=10)
         rest_resp.raise_for_status()
         rest_data = rest_resp.json()
-        public_repos = rest_data.get("public_repos", None)
-    except Exception as e:
-        public_repos = None  # Still continue to GraphQL
+        public_repos = rest_data.get("public_repos", 0)
 
-    # --- Step 2: Get heatmap using GraphQL ---
+    except Exception as e:
+        print(f"[REST API Error] {e}")
+        public_repos = 0
+
+    # --- Step 2: Get contributions heatmap using GraphQL ---
     calendar = {}
-    total_contributions = None
+    total_contributions = 0
 
     if GITHUB_TOKEN:
         graphql_query = """
@@ -77,7 +83,17 @@ def get_github_profile(username):
                             calendar[date] = count
 
         except Exception as e:
-            return {"github": {"error": "Failed to fetch contributions. Token may be invalid."}}
+            print(f"[GraphQL Error] {e}")
+            return {
+                "github": {
+                    "profile": {
+                        "public_repos": public_repos,
+                        "total_contributions": 0
+                    },
+                    "calendar": {},
+                    "error": "Failed to fetch contributions. Token may be invalid or expired."
+                }
+            }
 
     return {
         "github": {
@@ -88,4 +104,8 @@ def get_github_profile(username):
             "calendar": calendar
         }
     }
-print(get_github_profile("yuvasrisai18"))
+
+
+# Test call (only for development)
+if __name__ == "__main__":
+    print(get_github_profile("yuvasrisai18"))

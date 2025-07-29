@@ -1,46 +1,70 @@
+# modules/github_module.py
 import os
 import requests
+from collections import defaultdict
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file if present (development use)
 load_dotenv()
 
+GITHUB_GRAPHQL = "https://api.github.com/graphql"
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
+
 def get_github_profile(username):
-    print(username)
+    print(f"1 : {GITHUB_TOKEN}")
     if not username or not username.strip():
         return {"github": {"error": "Invalid or empty username"}}
-
-    url = f"https://api.github.com/users/{username.strip()}"
-    token = os.environ.get("GITHUB_TOKEN", "").strip()
-
+    print(f"2 : {GITHUB_TOKEN}")
     headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
         "User-Agent": "Mozilla/5.0"
     }
 
-    if token:
-        headers["Authorization"] = f"token {token}"
-
-    # print("📨 Headers:", headers)
+    # GraphQL query for profile + heatmap
+    query = """
+    query($login: String!) {
+      user(login: $login) {
+        contributionsCollection {
+          contributionCalendar {
+            totalContributions
+            weeks {
+              contributionDays {
+                date
+                contributionCount
+              }
+            }
+          }
+        }
+        publicRepos: repositories(privacy: PUBLIC) {
+          totalCount
+        }
+      }
+    }
+    """
+    variables = {"login": username.strip()}
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        # print("📡 Status:", response.status_code)
+        resp = requests.post(GITHUB_GRAPHQL, json={"query": query, "variables": variables}, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
 
-        if response.status_code == 400:
-            return {"github": {"error": "Bad Request — Check the username"}}
-        elif response.status_code == 404:
+        user = data.get("data", {}).get("user")
+        if not user:
             return {"github": {"error": "User not found"}}
-        elif response.status_code == 403:
-            return {"github": {"error": "Rate limit exceeded or forbidden"}}
-        elif response.status_code != 200:
-            return {"github": {"error": f"HTTP {response.status_code}", "message": response.text}}
 
-        data = response.json()
-        return {
-            "github": {
-                "public_repos": data.get("public_repos", 0)
-            }
+        # Process calendar data
+        weeks = user["contributionsCollection"]["contributionCalendar"]["weeks"]
+        calendar = {}
+        for week in weeks:
+            for day in week["contributionDays"]:
+                date = day["date"]  # YYYY‑MM‑DD
+                calendar[date] = day["contributionCount"]
+
+        profile = {
+            "public_repos": user["publicRepos"]["totalCount"],
+            "total_contributions": user["contributionsCollection"]["contributionCalendar"]["totalContributions"]
         }
+
+        return {"github": {"profile": profile, "calendar": calendar}}
 
     except Exception as e:
         return {"github": {"error": str(e)}}

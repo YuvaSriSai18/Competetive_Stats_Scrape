@@ -49,8 +49,13 @@ def codechef_stats():
             "rating": data.get("rating", None),
             "max_rating": data.get("max_rating", None),
             "problems_solved": data.get("problems_solved", 0),
-            "contests_participated": data.get("contests_participated", 0)
-        }
+            "contests_participated": data.get("contests_participated", 0),
+            "badge_count": data.get("badge_count", 0),
+            "contest_count": data.get("contest_count", 0)
+        },
+        "badge_details": data.get("badge_details", []),
+        "contest_history": data.get("contest_history", []),
+        "participated_contests": data.get("participated_contests", [])
     }), 200
 
 

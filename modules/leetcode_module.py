@@ -1,5 +1,5 @@
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 def get_leetcode_full_profile(username):
@@ -22,27 +22,86 @@ def get_leetcode_full_profile(username):
     }
 
     try:
-        # Heatmap
+        # Heatmap - Try to get submission calendar data
         heatmap_query = {
             "query": """
-            query recentAc($username: String!) {
-              recentAcSubmissionList(username: $username, limit: 1000) {
-                timestamp
+            query userProfileCalendar($username: String!, $year: Int!) {
+              matchedUser(username: $username) {
+                userCalendar(year: $year) {
+                  activeYears
+                  streak
+                  totalActiveDays
+                  submissionCalendar
+                }
               }
             }
             """,
-            "variables": {"username": username}
+            "variables": {"username": username, "year": datetime.now().year}
         }
+        
         resp = requests.post(url, json=heatmap_query, headers=headers, timeout=10)
         resp.raise_for_status()
-
-        subs = resp.json().get("data", {}).get("recentAcSubmissionList", [])
-        calendar = defaultdict(int)
-        for sub in subs:
-            ts = int(sub["timestamp"])
-            day = datetime.utcfromtimestamp(ts).replace(hour=0, minute=0, second=0, microsecond=0)
-            calendar[str(int(day.timestamp()))] += 1
-        result["calendar"] = dict(calendar)
+        calendar_data = resp.json().get("data", {})
+        
+        # Initialize calendar for the past year
+        today = datetime.now()
+        start_date = today - timedelta(days=365)
+        calendar = {}
+        current_date = start_date
+        while current_date <= today:
+            date_str = current_date.strftime("%Y-%m-%d")
+            calendar[date_str] = 0
+            current_date += timedelta(days=1)
+        
+        # Try to parse submission calendar if available
+        user_data = calendar_data.get("matchedUser")
+        if user_data and user_data.get("userCalendar"):
+            submission_calendar = user_data["userCalendar"].get("submissionCalendar")
+            if submission_calendar:
+                # submissionCalendar is a JSON string with timestamp: count pairs
+                import json
+                try:
+                    calendar_dict = json.loads(submission_calendar)
+                    for timestamp_str, count in calendar_dict.items():
+                        ts = int(timestamp_str)
+                        date = datetime.utcfromtimestamp(ts)
+                        date_str = date.strftime("%Y-%m-%d")
+                        if date_str in calendar:
+                            calendar[date_str] = count
+                except:
+                    print("Failed to parse submission calendar, falling back to recent submissions")
+        
+        # Fallback: Use recent submissions if calendar data not available
+        if not any(count > 0 for count in calendar.values()):
+            print("No calendar data found, trying recent submissions approach...")
+            fallback_query = {
+                "query": """
+                query recentAc($username: String!) {
+                  recentAcSubmissionList(username: $username, limit: 5000) {
+                    timestamp
+                  }
+                }
+                """,
+                "variables": {"username": username}
+            }
+            resp2 = requests.post(url, json=fallback_query, headers=headers, timeout=10)
+            resp2.raise_for_status()
+            
+            subs = resp2.json().get("data", {}).get("recentAcSubmissionList", [])
+            submission_count = 0
+            
+            for sub in subs:
+                ts = int(sub["timestamp"])
+                submission_date = datetime.utcfromtimestamp(ts)
+                date_str = submission_date.strftime("%Y-%m-%d")
+                
+                if date_str in calendar:
+                    calendar[date_str] += 1
+                    submission_count += 1
+            
+            print(f"Fallback: Processed {submission_count} submissions from {len(subs)} total")
+        
+        result["calendar"] = calendar
 
         # Full profile including badges and contests
         profile_query = {

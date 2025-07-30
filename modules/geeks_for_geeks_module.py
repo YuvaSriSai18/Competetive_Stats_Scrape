@@ -3,25 +3,24 @@ import json
 from bs4 import BeautifulSoup as bs
 
 def get_gfg_stats(username):
-    BASE_URL = f'https://auth.geeksforgeeks.org/user/{username}/practice/'
+    PRACTICE_URL = f'https://auth.geeksforgeeks.org/user/{username}/practice/'
+    PROFILE_URL = f'https://www.geeksforgeeks.org/user/{username}/'
 
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
-    profilePage = requests.get(BASE_URL, headers=headers)
-
+    # 1. Get practice page for problem stats
+    profilePage = requests.get(PRACTICE_URL, headers=headers)
     if profilePage.status_code != 200:
-        return {"error": "Profile Not Found"}
+        return {"error": "Practice profile not found"}
 
     soup = bs(profilePage.content, 'html.parser')
 
-    # Find the script tag containing JSON data
     script_tag = soup.find("script", id="__NEXT_DATA__", type="application/json")
     if not script_tag:
-        return {"error": "Could not find user data"}
+        return {"error": "Could not find user data script"}
 
-    # Parse the JSON data
     try:
         user_data = json.loads(script_tag.string)
         user_info = user_data["props"]["pageProps"]["userInfo"]
@@ -29,7 +28,6 @@ def get_gfg_stats(username):
     except (KeyError, json.JSONDecodeError):
         return {"error": "Failed to parse user data"}
 
-    # Extract general information
     generalInfo = {
         "userName": username,
         "fullName": user_info.get("name", ""),
@@ -41,26 +39,33 @@ def get_gfg_stats(username):
         "codingScore": user_info.get("score", 0),
         "monthlyScore": user_info.get("monthly_score", 0),
         "totalProblemsSolved": user_info.get("total_problems_solved", 0),
+        "contestRating": None  # placeholder
     }
 
-    # Extract solved questions by difficulty
     solvedStats = {}
     for difficulty, problems in user_submissions.items():
-        questions = [
-            {
-                "question": details["pname"],
-                "questionUrl": f"https://practice.geeksforgeeks.org/problems/{details['slug']}"
-            }
-            for details in problems.values()
-        ]
         solvedStats[difficulty.lower()] = {
-            "count": len(questions)
+            "count": len(problems)
         }
+
+    # 2. Get profile page for contest rating
+    profilePage2 = requests.get(PROFILE_URL, headers=headers)
+    if profilePage2.status_code == 200:
+        soup2 = bs(profilePage2.content, 'html.parser')
+        try:
+            rating_element = soup2.find('div', string='Contest Rating')
+            if rating_element:
+                rating_value = rating_element.find_next('div')
+                if rating_value:
+                    generalInfo["contestRating"] = int(rating_value.text.strip())
+        except Exception as e:
+            generalInfo["contestRating"] = None
 
     return {
         "info": generalInfo,
         "solvedStats": solvedStats
     }
+
 
 # Example direct call to test the module
 if __name__ == "__main__":

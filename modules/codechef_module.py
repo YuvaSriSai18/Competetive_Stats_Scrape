@@ -26,7 +26,7 @@ def get_codechef_profile(username):
 
     soup = BeautifulSoup(res.text, "html.parser")
     profile = {}
-
+    profile["username"] = username
     # ⭐ Stars
     rating_header = soup.find("div", class_="rating-header")
     profile["stars"] = rating_header.get_text().count("★") if rating_header else 0

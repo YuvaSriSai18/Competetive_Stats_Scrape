@@ -104,6 +104,7 @@ def get_leetcode_full_profile(username):
         result["calendar"] = calendar
 
         # Full profile including badges and contests
+        # Update profile_query to include aboutMe
         profile_query = {
             "query": """
             query userProfile($username: String!) {
@@ -113,6 +114,9 @@ def get_leetcode_full_profile(username):
               }
               matchedUser(username: $username) {
                 username
+                profile {
+                  aboutMe
+                }
                 submitStatsGlobal {
                   acSubmissionNum {
                     difficulty
@@ -145,12 +149,15 @@ def get_leetcode_full_profile(username):
             """,
             "variables": {"username": username}
         }
+
         resp2 = requests.post(url, json=profile_query, headers=headers, timeout=10)
         resp2.raise_for_status()
         pd = resp2.json().get("data", {})
 
         mu = pd.get("matchedUser", {})
         result["profile"]["username"] = mu.get("username", "")
+        result["profile"]["bio"] = mu.get("profile", {}).get("aboutMe", "")
+
 
         # Problems solved
         ac = mu.get("submitStatsGlobal", {}).get("acSubmissionNum", [])

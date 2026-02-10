@@ -100,6 +100,51 @@ app = FastAPI(title="GFG Scraper API", version="1.0.0")
 
 
 # ======================================================
+# FORMAT RESPONSE FUNCTION
+# ======================================================
+
+def format_gfg_response(raw_data: dict) -> dict:
+    """Format raw GFG data into the required JSON structure"""
+    
+    # Extract info fields
+    info = {
+        "userName": raw_data.get("user", ""),
+        "fullName": raw_data.get("fullName", ""),
+        "profilePicture": raw_data.get("profilePicture", ""),
+        "institute": raw_data.get("institute", ""),
+        "codingScore": raw_data.get("codingScore", 0),
+        "maxStreak": raw_data.get("maxStreak", 0),
+        "currentStreak": raw_data.get("currentStreak", 0),
+        "instituteRank": raw_data.get("instituteRank", 0),
+        "totalProblemsSolved": raw_data.get("total", 0),
+        "monthlyScore": raw_data.get("monthlyScore", 0),
+        "contestRating": raw_data.get("contestRating", None)
+    }
+    
+    # Remove None values and empty strings from info
+    info = {k: v for k, v in info.items() if v is not None and v != ""}
+    
+    # Extract solvedStats fields
+    solvedStats = {}
+    
+    if raw_data.get("basic", 0) > 0:
+        solvedStats["basic"] = {"count": raw_data.get("basic", 0)}
+    if raw_data.get("easy", 0) > 0:
+        solvedStats["easy"] = {"count": raw_data.get("easy", 0)}
+    if raw_data.get("medium", 0) > 0:
+        solvedStats["medium"] = {"count": raw_data.get("medium", 0)}
+    if raw_data.get("hard", 0) > 0:
+        solvedStats["hard"] = {"count": raw_data.get("hard", 0)}
+    if raw_data.get("school", 0) > 0:
+        solvedStats["school"] = {"count": raw_data.get("school", 0)}
+    
+    return {
+        "info": info,
+        "solvedStats": solvedStats
+    }
+
+
+# ======================================================
 # SYNCHRONOUS WRAPPER FUNCTION FOR MAIN.PY
 # ======================================================
 
@@ -128,19 +173,18 @@ def get_gfg_stats(username: str):
             result = loop.run_until_complete(fetch())
             loop.close()
             
-            return {
-                "status": "success",
-                "user": username,
-                "data": result
-            }
+            # Format the response
+            formatted_result = format_gfg_response(result)
+            
+            return formatted_result
         finally:
             # Close driver
             driver.quit()
     
     except Exception as e:
         return {
-            "status": "error",
-            "user": username,
+            "info": {},
+            "solvedStats": {},
             "error": str(e)
         }
 
@@ -175,7 +219,9 @@ async def batch_fetch(users: List[str], driver):
             tasks = [fetch_user_complete(client, u, sem, driver) for u in batch]
             batch_results = await asyncio.gather(*tasks)
             
-            all_results.extend(batch_results)
+            # Format each result
+            formatted_results = [format_gfg_response(r) for r in batch_results]
+            all_results.extend(formatted_results)
         
         print("\n[COMPLETE] Scraping finished!\n")
 
@@ -258,11 +304,9 @@ async def scrape_user(username: str):
             ) as client:
                 result = await fetch_user_complete(client, username, sem, driver)
             
-            return {
-                "status": "success",
-                "user": username,
-                "data": result
-            }
+            # Format the response
+            formatted_result = format_gfg_response(result)
+            return formatted_result
         finally:
             # Close driver
             driver.quit()

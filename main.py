@@ -1,48 +1,50 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from modules.codechef_module import get_codechef_profile
 from modules.geeks_for_geeks_module import get_gfg_stats
 from modules.github_module import get_github_profile
 from modules.leetcode_module import get_leetcode_full_profile
 import os
+import uvicorn
 
 load_dotenv()
 
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+app = FastAPI()
 
-@app.route("/")
+# Enable CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
 def home():
-    return "✅ API is running. Use /leetcode, /codechef, /gfg, /github."
+    return {"message": "✅ API is running. Use /leetcode, /codechef, /gfg, /github."}
 
 # --- LeetCode API ---
-@app.route("/leetcode", methods=["GET"])
-def leetcode_stats():
-    username = request.args.get("username")
-    if not username:
-        return jsonify({"error": "Missing LeetCode username"}), 400
+@app.get("/leetcode")
+def leetcode_stats(username: str = Query(..., description="LeetCode username")):
     try:
         stats = get_leetcode_full_profile(username)
-        return jsonify(stats)
+        return stats
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
 # --- CodeChef API ---
-@app.route("/codechef", methods=["GET"])
-def codechef_stats():
-    username = request.args.get("username")
-    if not username:
-        return jsonify({"error": "Missing username"}), 400
-
+@app.get("/codechef")
+def codechef_stats(username: str = Query(..., description="CodeChef username")):
     result = get_codechef_profile(username)
     
     if "error" in result.get("codechef", {}):
-        return jsonify({"error": result["codechef"]["error"]}), 500
+        return {"error": result["codechef"]["error"]}
 
     data = result.get("codechef", {})
 
-    return jsonify({
+    return {
         "calendar": data.get("calendar", {}),
         "profile": {
             "stars": data.get("stars", 0),
@@ -56,48 +58,27 @@ def codechef_stats():
         "badge_details": data.get("badge_details", []),
         "contest_history": data.get("contest_history", []),
         "participated_contests": data.get("participated_contests", [])
-    }), 200
+    }
 
 
 # --- GeeksforGeeks API ---
-@app.route("/gfg", methods=["GET"])
-def gfg_stats():
-    username = request.args.get("username")
-    if not username:
-        return jsonify({"error": "Missing GFG username"}), 400
+@app.get("/gfg")
+def gfg_stats(username: str = Query(..., description="GeeksForGeeks username")):
     try:
         stats = get_gfg_stats(username)
-        return jsonify(stats)
+        return stats
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"error": str(e)}
 
 # --- GitHub API ---
-@app.route("/github", methods=["GET"])
-def github_stats():
-    username = request.args.get("username")
-    if not username:
-        return jsonify({"error": "Missing GitHub username"}), 400
-
+@app.get("/github")
+def github_stats(username: str = Query(..., description="GitHub username")):
     result = get_github_profile(username)
-    return jsonify(result)
+    return result
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-# from flask import Flask, request, jsonify
-# from flask_cors import CORS
-# from modules.codechef_module import get_codechef_stars
-# from modules.geeks_for_geeks_module import get_gfg_stats
-# from modules.github_module import get_github_profile
-# from modules.leetcode_module import get_leetcode_full_profile
-# from dotenv import load_dotenv
-# import threading
-# import time
-# import os
-
-# app = Flask(__name__)
-# CORS(app, resources={r"/*": {"origins": "*"}})
+    port = int(os.environ.get("PORT", 5001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 # load_dotenv()
 
 # print_lock = threading.Lock()  # Thread-safe printing
@@ -294,7 +275,7 @@ if __name__ == "__main__":
 #         return jsonify(result)
 
 # if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 5000))
+#     port = int(os.environ.get("PORT", 5001))
 #     app.run(host="0.0.0.0", port=port)
 
 # # from flask import Flask, request, jsonify
@@ -317,5 +298,5 @@ if __name__ == "__main__":
 # #     load_dotenv()
 
 # #     import os
-# #     port = int(os.environ.get("PORT", 5000))
+# #     port = int(os.environ.get("PORT", 5001))
 # #     app.run(host="0.0.0.0", port=port)

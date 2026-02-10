@@ -1,6 +1,5 @@
-Flask
+fastapi
+uvicorn[standard]
 requests
 beautifulsoup4
-gunicorn
 python-dotenv
-flask-cors

@@ -3,3 +3,7 @@ uvicorn[standard]
 requests
 beautifulsoup4
 python-dotenv
+lxml
+selenium
+webdriver-manager
+httpx

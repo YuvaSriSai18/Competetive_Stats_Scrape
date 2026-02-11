@@ -80,7 +80,7 @@ async def health_check():
 
 
 @app.get("/gfg")
-async def scrape_user(username: str):
+async def get_gfg_stats(username: str):
     """Scrape a single user by username - returns JSON
     
     Usage: /gfg?username=yuvasrisai18

@@ -77,8 +77,8 @@ def github_stats(username: str = Query(..., description="GitHub username")):
     return result
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5001))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 10000))   # Render assigns PORT automatically
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
 # load_dotenv()
 
 # print_lock = threading.Lock()  # Thread-safe printing

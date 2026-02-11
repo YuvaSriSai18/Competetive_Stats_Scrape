@@ -2,19 +2,18 @@
 Shared configuration and utilities for GFG Scraper
 """
 
-import csv
-from typing import List, Dict
+import sys
+import asyncio
+
+# Fix for Windows asyncio subprocess issues with Playwright
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from typing import Dict
 import httpx
 from bs4 import BeautifulSoup
 import re
-import asyncio
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import time
+from playwright.async_api import async_playwright
 
 # ======================================================
 # CONFIG
@@ -22,10 +21,7 @@ import time
 
 # GeeksForGeeks Submissions API
 GFG_SUBMISSION_API = "https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/"
-GFG_PROFILE_API = "https://utilapi.geeksforgeeks.org/api/user/profile/"
 GFG_PROFILE_PAGE = "https://www.geeksforgeeks.org/user/{username}/"
-
-CSV_FILE = "GFG USERNAMES - Sheet1.csv"
 
 # Control concurrency (important to avoid rate limit)
 MAX_CONCURRENT_REQUESTS = 10
@@ -40,25 +36,6 @@ HEADERS = {
 # ======================================================
 # SHARED FUNCTIONS
 # ======================================================
-
-def load_users() -> List[str]:
-    """Load usernames from CSV file"""
-    users = []
-    
-    try:
-        with open(CSV_FILE, "r") as f:
-            reader = csv.reader(f)
-            next(reader)  # Skip header row
-            
-            for row in reader:
-                if row:
-                    users.append(row[0].strip())
-    
-    except Exception as e:
-        raise Exception(f"CSV read error: {e}")
-    
-    return users
-
 
 def parse_submission_data(data: Dict):
     """Parse GFG API response data"""
@@ -82,7 +59,6 @@ def parse_submission_data(data: Dict):
 async def fetch_user(client: httpx.AsyncClient, username: str, sem):
     """Fetch submission data for a single user"""
     async with sem:
-        
         payload = {
             "handle": username,
             "requestType": "",
@@ -91,7 +67,6 @@ async def fetch_user(client: httpx.AsyncClient, username: str, sem):
         }
         
         try:
-            
             res = await client.post(GFG_SUBMISSION_API, json=payload, timeout=20)
             
             if res.status_code != 200:
@@ -101,7 +76,6 @@ async def fetch_user(client: httpx.AsyncClient, username: str, sem):
                 }
             
             data = res.json()
-            
             parsed = parse_submission_data(data)
             
             return {
@@ -110,63 +84,42 @@ async def fetch_user(client: httpx.AsyncClient, username: str, sem):
             }
         
         except Exception as e:
-            
             return {
                 "user": username,
                 "error": str(e)
             }
 
 
-def create_webdriver():
-    """Create a single Selenium WebDriver instance for reuse"""
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--user-agent=Mozilla/5.0")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=options
+async def create_browser():
+    """Create a Playwright browser instance for reuse"""
+    playwright_instance = await async_playwright().start()
+    browser = await playwright_instance.chromium.launch(
+        headless=True,
+        args=[
+            "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+        ]
     )
-    return driver
+    return browser, playwright_instance
 
 
-async def scrape_profile_page(client: httpx.AsyncClient, username: str):
-    """DEPRECATED: Scrape profile page with new driver each time (slow, for backward compatibility)"""
-    driver = None
-    try:
-        driver = create_webdriver()
-        return scrape_profile_page_with_driver(driver, username)
-    except Exception as e:
-        return {}
-    finally:
-        if driver:
-            driver.quit()
-
-
-def scrape_profile_page_with_driver(driver, username: str):
-    """Scrape profile page using existing WebDriver instance to extract all user data"""
+async def scrape_profile_page_with_page(page, username: str):
+    """Scrape profile page using Playwright page to extract all user data"""
     profile_data = {}
     
     try:
         url = GFG_PROFILE_PAGE.format(username=username)
-        driver.get(url)
-        time.sleep(2)  # Wait for page to render (increased from 1)
+        await page.goto(url, wait_until="networkidle", timeout=30000)
         
-        # Wait for specific profile elements to be present
+        # Wait for profile container to be present
         try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "NewProfile_profileContainer__G__Lh"))
-            )
+            await page.wait_for_selector(".NewProfile_profileContainer__G__Lh", timeout=10000)
         except:
             pass  # Continue anyway if wait fails
         
-        # Get page source after JS rendering
-        soup = BeautifulSoup(driver.page_source, 'lxml')
+        # Get page content after JS rendering
+        content = await page.content()
+        soup = BeautifulSoup(content, 'lxml')
         
         # Extract Full Name from h2 with specific class
         try:
@@ -179,7 +132,6 @@ def scrape_profile_page_with_driver(driver, username: str):
         
         # Extract Profile Picture URL
         try:
-            # Look for profile image with rounded-full class in profile container
             img_elem = soup.find('img', class_=re.compile(r'rounded-full', re.I))
             
             if img_elem and img_elem.get('src'):
@@ -196,11 +148,8 @@ def scrape_profile_page_with_driver(driver, username: str):
         
         # Extract Institute Name from Qualifications section
         try:
-            # Look for text that contains university/college/institute name
-            # Usually appears in a qualifications section
             qualifications = soup.find('div', class_=re.compile(r'[Qq]ualification', re.I))
             if qualifications:
-                # Get the institute name from <p> tag in qualifications
                 p_tag = qualifications.find('p')
                 if p_tag:
                     institute_text = p_tag.get_text(strip=True)
@@ -259,34 +208,38 @@ def scrape_profile_page_with_driver(driver, username: str):
     return profile_data
 
 
-
-
-async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem, driver=None):
+async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem, page=None):
     """Fetch complete user data: submissions + UI scraping
     
     Args:
         client: httpx async client
         username: GFG username
         sem: asyncio semaphore for rate limiting
-        driver: Optional Selenium WebDriver instance (if provided, reuses it instead of creating new one)
+        page: Optional Playwright page instance (if provided, reuses it instead of creating new one)
     """
     async with sem:
         try:
             # Fetch submissions from API
-            submissions_task = fetch_user(client, username, asyncio.Semaphore(1))
-            submissions_data = await submissions_task
+            submissions_data = await fetch_user(client, username, asyncio.Semaphore(1))
             
             # Check if submissions failed
             if "error" in submissions_data:
                 return submissions_data
             
             # Scrape profile page UI (gets fullName, profilePicture, institute, codingScore, scores, streaks)
-            if driver:
-                # Reuse existing driver (no async needed)
-                ui_data = scrape_profile_page_with_driver(driver, username)
+            if page:
+                # Reuse existing page
+                ui_data = await scrape_profile_page_with_page(page, username)
             else:
-                # Create new driver (fallback, slower)
-                ui_data = await scrape_profile_page(client, username)
+                # Create new browser for single request (fallback)
+                browser, playwright_instance = await create_browser()
+                try:
+                    new_page = await browser.new_page()
+                    ui_data = await scrape_profile_page_with_page(new_page, username)
+                finally:
+                    await new_page.close()
+                    await browser.close()
+                    await playwright_instance.stop()
             
             # Combine all data
             complete_data = {
@@ -295,9 +248,6 @@ async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem, dri
                 **ui_data
             }
             
-            # Remove duplicate 'user' key if exists
-            complete_data.pop('error', None)
-            
             return complete_data
         
         except Exception as e:
@@ -305,6 +255,3 @@ async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem, dri
                 "user": username,
                 "error": str(e)
             }
-
-
-

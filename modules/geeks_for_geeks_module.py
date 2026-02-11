@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from config import (
+from utils.config import (
     fetch_user_complete,
     create_browser,
     HEADERS

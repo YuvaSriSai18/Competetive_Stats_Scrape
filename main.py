@@ -63,9 +63,9 @@ def codechef_stats(username: str = Query(..., description="CodeChef username")):
 
 # --- GeeksforGeeks API ---
 @app.get("/gfg")
-async def gfg_stats(username: str = Query(..., description="GeeksForGeeks username")):
+def gfg_stats(username: str = Query(..., description="GeeksForGeeks username")):
     try:
-        stats = await get_gfg_stats(username)
+        stats = get_gfg_stats(username)
         return stats
     except Exception as e:
         return {"error": str(e)}

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-from config import (
+from utils.config import (
     fetch_user_complete,
     HEADERS
 )
@@ -63,6 +63,152 @@ def format_gfg_response(raw_data: dict) -> dict:
         "info": info,
         "solvedStats": solvedStats
     }
+
+
+# ======================================================
+# EXPORTABLE FUNCTION
+# ======================================================
+
+def get_gfg_stats(username: str) -> dict:
+    """Get GFG stats for a user (synchronous wrapper)
+    
+    Args:
+        username: GFG username
+        
+    Returns:
+        Formatted GFG stats dictionary
+    """
+    try:
+        if not username or username.strip() == "":
+            return {"error": "Username is required"}
+        
+        logger.info(f"Fetching GFG stats for {username}")
+        
+        # Use synchronous requests
+        import json
+        import re
+        from bs4 import BeautifulSoup
+        
+        GFG_SUBMISSION_API = "https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/"
+        GFG_PROFILE_PAGE = "https://www.geeksforgeeks.org/user/{username}/"
+        
+        # Step 1: Fetch API data
+        payload = {
+            "handle": username,
+            "requestType": "",
+            "year": "",
+            "month": ""
+        }
+        
+        api_res = httpx.post(GFG_SUBMISSION_API, json=payload, headers=HEADERS, timeout=20)
+        
+        if api_res.status_code != 200:
+            return {
+                "error": f"API error: status {api_res.status_code}"
+            }
+        
+        # Parse API response
+        try:
+            api_data_json = json.loads(api_res.text)
+            result = api_data_json.get("result", {})
+            
+            basic = len(result.get("Basic", {}))
+            easy = len(result.get("Easy", {}))
+            medium = len(result.get("Medium", {}))
+            hard = len(result.get("Hard", {}))
+            
+            api_data = {
+                "basic": basic,
+                "easy": easy,
+                "medium": medium,
+                "hard": hard,
+                "total": basic + easy + medium + hard,
+            }
+        except Exception as e:
+            logger.error(f"Error parsing API response: {e}")
+            return {"error": str(e)}
+        
+        # Step 2: Fetch profile page
+        url = GFG_PROFILE_PAGE.format(username=username)
+        profile_res = httpx.get(url, headers=HEADERS, timeout=20)
+        
+        profile_data = {}
+        if profile_res.status_code == 200:
+            try:
+                soup = BeautifulSoup(profile_res.text, 'lxml')
+                
+                # Extract Full Name
+                name_elem = soup.find('h2', class_='NewProfile_name__N_Nlw')
+                if name_elem:
+                    profile_data['fullName'] = name_elem.get_text(strip=True)
+                
+                # Extract Profile Picture URL
+                img_elem = soup.find('img', class_=re.compile(r'rounded-full', re.I))
+                if img_elem and img_elem.get('src'):
+                    src = img_elem['src']
+                    if src.startswith('http'):
+                        profile_data['profilePicture'] = src
+                    elif src.startswith('/'):
+                        profile_data['profilePicture'] = 'https://www.geeksforgeeks.org' + src
+                    else:
+                        profile_data['profilePicture'] = 'https://www.geeksforgeeks.org/' + src
+                
+                # Extract Institute Name
+                qualifications = soup.find('div', class_=re.compile(r'[Qq]ualification', re.I))
+                if qualifications:
+                    p_tag = qualifications.find('p')
+                    if p_tag:
+                        institute_text = p_tag.get_text(strip=True)
+                        if institute_text and len(institute_text) < 100:
+                            profile_data['institute'] = institute_text
+                
+                # Extract Coding Score
+                score_elements = soup.find_all(class_="ScoreContainer_value__7yy7h")
+                if len(score_elements) > 0:
+                    score_text = score_elements[0].get_text(strip=True)
+                    score_match = re.search(r'(\d+)', score_text)
+                    if score_match:
+                        profile_data['codingScore'] = int(score_match.group(1))
+                
+                # Extract Institute Rank
+                if len(score_elements) > 2:
+                    rank_text = score_elements[2].get_text(strip=True)
+                    rank_match = re.search(r'(\d+)', rank_text)
+                    if rank_match:
+                        profile_data['instituteRank'] = int(rank_match.group(1))
+                
+                # Extract Max Streak
+                streak_values = soup.find_all(class_="PotdContainer_statValue__nt1dr")
+                if len(streak_values) > 0:
+                    max_streak_text = streak_values[0].get_text(strip=True)
+                    max_streak_match = re.search(r'(\d+)', max_streak_text)
+                    if max_streak_match:
+                        profile_data['maxStreak'] = int(max_streak_match.group(1))
+                
+                # Extract Current POTD Streak
+                potd_text_elem = soup.find(string=re.compile(r'\d+\s*Day\s*POTD\s*Streak', re.I))
+                if potd_text_elem:
+                    potd_text = potd_text_elem.get_text(strip=True)
+                    potd_match = re.search(r'(\d+)\s*Day', potd_text, re.I)
+                    if potd_match:
+                        profile_data['currentStreak'] = int(potd_match.group(1))
+            except Exception as e:
+                logger.debug(f"Error scraping profile page: {e}")
+        
+        # Combine all data
+        complete_data = {
+            "user": username,
+            **api_data,
+            **profile_data
+        }
+        
+        # Format the response
+        formatted_result = format_gfg_response(complete_data)
+        return formatted_result
+    
+    except Exception as e:
+        logger.error(f"Error fetching GFG stats for {username}: {e}")
+        return {"error": str(e)}
 
 
 # ======================================================

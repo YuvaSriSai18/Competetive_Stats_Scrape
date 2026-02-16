@@ -1,16 +1,15 @@
 
 import asyncio
-import sys
+import logging
 import httpx
 from fastapi import FastAPI, HTTPException
 
-# Fix for Windows asyncio subprocess issues with Playwright
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-from utils.config import (
+from config import (
     fetch_user_complete,
-    create_browser,
     HEADERS
 )
 
@@ -24,6 +23,12 @@ app = FastAPI(title="GFG Scraper API", version="1.0.0")
 def format_gfg_response(raw_data: dict) -> dict:
     """Format raw GFG data into the required JSON structure"""
     
+    if "error" in raw_data:
+        return {
+            "user": raw_data.get("user", ""),
+            "error": raw_data["error"]
+        }
+    
     # Extract info fields
     info = {
         "userName": raw_data.get("user", ""),
@@ -35,8 +40,6 @@ def format_gfg_response(raw_data: dict) -> dict:
         "currentStreak": raw_data.get("currentStreak", 0),
         "instituteRank": raw_data.get("instituteRank", 0),
         "totalProblemsSolved": raw_data.get("total", 0),
-        "monthlyScore": raw_data.get("monthlyScore", 0),
-        "contestRating": raw_data.get("contestRating", None)
     }
     
     # Remove None values and empty strings from info
@@ -62,9 +65,6 @@ def format_gfg_response(raw_data: dict) -> dict:
     }
 
 
-
-
-
 # ======================================================
 # API ENDPOINTS
 # ======================================================
@@ -72,6 +72,7 @@ def format_gfg_response(raw_data: dict) -> dict:
 @app.get("/")
 async def health_check():
     """Health check endpoint for monitoring"""
+    logger.info("Health check requested")
     return {
         "status": "healthy",
         "service": "GFG Scraper API",
@@ -80,45 +81,51 @@ async def health_check():
 
 
 @app.get("/gfg")
-async def get_gfg_stats(username: str):
-    """Scrape a single user by username - returns JSON
+async def scrape_user(username: str):
+    """Scrape a single user by username using BeautifulSoup for both API and UI
     
     Usage: /gfg?username=yuvasrisai18
     """
     try:
+        logger.info(f"Scraping user: {username}")
         if not username or username.strip() == "":
             raise HTTPException(status_code=400, detail="Username parameter is required")
 
-        # Create browser for single user
-        browser, playwright_instance = await create_browser()
+        sem = asyncio.Semaphore(1)
         
         try:
-            sem = asyncio.Semaphore(1)
-            page = await browser.new_page()
+            async with httpx.AsyncClient(
+                headers=HEADERS,
+                follow_redirects=True,
+                limits=httpx.Limits(max_connections=10),
+                timeout=30
+            ) as client:
+                logger.info(f"Fetching data for {username}...")
+                result = await fetch_user_complete(client, username, sem)
             
-            try:
-                async with httpx.AsyncClient(
-                    headers=HEADERS,
-                    follow_redirects=True,
-                    limits=httpx.Limits(max_connections=10)
-                ) as client:
-                    result = await fetch_user_complete(client, username, sem, page)
-                
-                # Format the response
-                formatted_result = format_gfg_response(result)
-                return formatted_result
-            finally:
-                await page.close()
-        finally:
-            # Close browser
-            await browser.close()
-            await playwright_instance.stop()
+            # Check if there was an error
+            if "error" in result:
+                logger.error(f"Error for user {username}: {result['error']}")
+            else:
+                logger.info(f"Successfully scraped user {username}")
+            
+            # Format the response
+            formatted_result = format_gfg_response(result)
+            return formatted_result
+        
+        except Exception as e:
+            logger.error(f"Exception in scrape_user: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 

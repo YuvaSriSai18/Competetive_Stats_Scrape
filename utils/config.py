@@ -1,35 +1,32 @@
 """
-Shared configuration and utilities for GFG Scraper
+GFG Scraper - BeautifulSoup based (API + UI scraping)
 """
 
-import sys
 import asyncio
-
-# Fix for Windows asyncio subprocess issues with Playwright
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
+import logging
+import json
 from typing import Dict
 import httpx
 from bs4 import BeautifulSoup
 import re
-from playwright.async_api import async_playwright
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ======================================================
 # CONFIG
 # ======================================================
 
-# GeeksForGeeks Submissions API
 GFG_SUBMISSION_API = "https://practiceapi.geeksforgeeks.org/api/v1/user/problems/submissions/"
 GFG_PROFILE_PAGE = "https://www.geeksforgeeks.org/user/{username}/"
 
-# Control concurrency (important to avoid rate limit)
 MAX_CONCURRENT_REQUESTS = 10
-BATCH_SIZE = 10  # Process 10 users per batch
+BATCH_SIZE = 10
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Referer": "https://www.geeksforgeeks.org/"
 }
 
@@ -37,89 +34,36 @@ HEADERS = {
 # SHARED FUNCTIONS
 # ======================================================
 
-def parse_submission_data(data: Dict):
-    """Parse GFG API response data"""
-    result = data.get("result", {})
-    
-    basic = len(result.get("Basic", {}))
-    easy = len(result.get("Easy", {}))
-    medium = len(result.get("Medium", {}))
-    hard = len(result.get("Hard", {}))
-    
-    return {
-        "basic": basic,
-        "easy": easy,
-        "medium": medium,
-        "hard": hard,
-        "total": basic + easy + medium + hard,
-        "count_field": data.get("count")
-    }
-
-
-async def fetch_user(client: httpx.AsyncClient, username: str, sem):
-    """Fetch submission data for a single user"""
-    async with sem:
-        payload = {
-            "handle": username,
-            "requestType": "",
-            "year": "",
-            "month": ""
+def parse_api_response(response_text: str) -> Dict:
+    """Parse API response (JSON string) using BeautifulSoup approach"""
+    try:
+        # Parse JSON response
+        data = json.loads(response_text)
+        result = data.get("result", {})
+        
+        basic = len(result.get("Basic", {}))
+        easy = len(result.get("Easy", {}))
+        medium = len(result.get("Medium", {}))
+        hard = len(result.get("Hard", {}))
+        
+        return {
+            "basic": basic,
+            "easy": easy,
+            "medium": medium,
+            "hard": hard,
+            "total": basic + easy + medium + hard,
         }
-        
-        try:
-            res = await client.post(GFG_SUBMISSION_API, json=payload, timeout=20)
-            
-            if res.status_code != 200:
-                return {
-                    "user": username,
-                    "error": f"status {res.status_code}"
-                }
-            
-            data = res.json()
-            parsed = parse_submission_data(data)
-            
-            return {
-                "user": username,
-                **parsed
-            }
-        
-        except Exception as e:
-            return {
-                "user": username,
-                "error": str(e)
-            }
+    except Exception as e:
+        logger.error(f"Error parsing API response: {e}")
+        return {"error": str(e)}
 
 
-async def create_browser():
-    """Create a Playwright browser instance for reuse"""
-    playwright_instance = await async_playwright().start()
-    browser = await playwright_instance.chromium.launch(
-        headless=True,
-        args=[
-            "--disable-blink-features=AutomationControlled",
-            "--disable-dev-shm-usage",
-        ]
-    )
-    return browser, playwright_instance
-
-
-async def scrape_profile_page_with_page(page, username: str):
-    """Scrape profile page using Playwright page to extract all user data"""
+def scrape_profile_page(html_content: str, username: str) -> Dict:
+    """Scrape profile page HTML using BeautifulSoup"""
     profile_data = {}
     
     try:
-        url = GFG_PROFILE_PAGE.format(username=username)
-        await page.goto(url, wait_until="networkidle", timeout=30000)
-        
-        # Wait for profile container to be present
-        try:
-            await page.wait_for_selector(".NewProfile_profileContainer__G__Lh", timeout=10000)
-        except:
-            pass  # Continue anyway if wait fails
-        
-        # Get page content after JS rendering
-        content = await page.content()
-        soup = BeautifulSoup(content, 'lxml')
+        soup = BeautifulSoup(html_content, 'lxml')
         
         # Extract Full Name from h2 with specific class
         try:
@@ -128,15 +72,13 @@ async def scrape_profile_page_with_page(page, username: str):
                 fullname = name_elem.get_text(strip=True)
                 profile_data['fullName'] = fullname
         except Exception as e:
-            pass
+            logger.debug(f"Could not extract fullName: {e}")
         
         # Extract Profile Picture URL
         try:
             img_elem = soup.find('img', class_=re.compile(r'rounded-full', re.I))
-            
             if img_elem and img_elem.get('src'):
                 src = img_elem['src']
-                # Convert to full URL if relative
                 if src.startswith('http'):
                     profile_data['profilePicture'] = src
                 elif src.startswith('/'):
@@ -144,9 +86,9 @@ async def scrape_profile_page_with_page(page, username: str):
                 else:
                     profile_data['profilePicture'] = 'https://www.geeksforgeeks.org/' + src
         except Exception as e:
-            pass
+            logger.debug(f"Could not extract profilePicture: {e}")
         
-        # Extract Institute Name from Qualifications section
+        # Extract Institute Name
         try:
             qualifications = soup.find('div', class_=re.compile(r'[Qq]ualification', re.I))
             if qualifications:
@@ -156,9 +98,9 @@ async def scrape_profile_page_with_page(page, username: str):
                     if institute_text and len(institute_text) < 100:
                         profile_data['institute'] = institute_text
         except Exception as e:
-            pass
+            logger.debug(f"Could not extract institute: {e}")
         
-        # Extract Coding Score using CSS class selector
+        # Extract Coding Score
         try:
             score_elements = soup.find_all(class_="ScoreContainer_value__7yy7h")
             if len(score_elements) > 0:
@@ -166,10 +108,10 @@ async def scrape_profile_page_with_page(page, username: str):
                 score_match = re.search(r'(\d+)', score_text)
                 if score_match:
                     profile_data['codingScore'] = int(score_match.group(1))
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not extract codingScore: {e}")
         
-        # Extract Institute Rank (should be 3rd score card)
+        # Extract Institute Rank
         try:
             score_elements = soup.find_all(class_="ScoreContainer_value__7yy7h")
             if len(score_elements) > 2:
@@ -177,10 +119,10 @@ async def scrape_profile_page_with_page(page, username: str):
                 rank_match = re.search(r'(\d+)', rank_text)
                 if rank_match:
                     profile_data['instituteRank'] = int(rank_match.group(1))
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not extract instituteRank: {e}")
         
-        # Extract Max Streak (Longest Streak) using POTD container
+        # Extract Max Streak
         try:
             streak_values = soup.find_all(class_="PotdContainer_statValue__nt1dr")
             if len(streak_values) > 0:
@@ -188,10 +130,10 @@ async def scrape_profile_page_with_page(page, username: str):
                 max_streak_match = re.search(r'(\d+)', max_streak_text)
                 if max_streak_match:
                     profile_data['maxStreak'] = int(max_streak_match.group(1))
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not extract maxStreak: {e}")
         
-        # Extract Current POTD Streak from text like "0 Day POTD Streak"
+        # Extract Current POTD Streak
         try:
             potd_text_elem = soup.find(string=re.compile(r'\d+\s*Day\s*POTD\s*Streak', re.I))
             if potd_text_elem:
@@ -199,58 +141,68 @@ async def scrape_profile_page_with_page(page, username: str):
                 potd_match = re.search(r'(\d+)\s*Day', potd_text, re.I)
                 if potd_match:
                     profile_data['currentStreak'] = int(potd_match.group(1))
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Could not extract currentStreak: {e}")
     
     except Exception as e:
-        pass
+        logger.error(f"Error scraping profile page for {username}: {e}")
     
     return profile_data
 
 
-async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem, page=None):
-    """Fetch complete user data: submissions + UI scraping
-    
-    Args:
-        client: httpx async client
-        username: GFG username
-        sem: asyncio semaphore for rate limiting
-        page: Optional Playwright page instance (if provided, reuses it instead of creating new one)
-    """
+async def fetch_user_complete(client: httpx.AsyncClient, username: str, sem) -> Dict:
+    """Fetch complete user data: API + UI scraping using BeautifulSoup"""
     async with sem:
         try:
-            # Fetch submissions from API
-            submissions_data = await fetch_user(client, username, asyncio.Semaphore(1))
+            # Step 1: Fetch API data
+            logger.info(f"Fetching API data for {username}...")
+            payload = {
+                "handle": username,
+                "requestType": "",
+                "year": "",
+                "month": ""
+            }
             
-            # Check if submissions failed
-            if "error" in submissions_data:
-                return submissions_data
+            api_res = await client.post(GFG_SUBMISSION_API, json=payload, timeout=20)
             
-            # Scrape profile page UI (gets fullName, profilePicture, institute, codingScore, scores, streaks)
-            if page:
-                # Reuse existing page
-                ui_data = await scrape_profile_page_with_page(page, username)
+            if api_res.status_code != 200:
+                return {
+                    "user": username,
+                    "error": f"API error: status {api_res.status_code}"
+                }
+            
+            api_data = parse_api_response(api_res.text)
+            
+            if "error" in api_data:
+                return {
+                    "user": username,
+                    "error": api_data["error"]
+                }
+            
+            # Step 2: Fetch profile page HTML and scrape with BeautifulSoup
+            logger.info(f"Fetching profile page for {username}...")
+            url = GFG_PROFILE_PAGE.format(username=username)
+            
+            profile_res = await client.get(url, timeout=20)
+            
+            if profile_res.status_code != 200:
+                logger.warning(f"Profile page returned {profile_res.status_code} for {username}")
+                profile_data = {}
             else:
-                # Create new browser for single request (fallback)
-                browser, playwright_instance = await create_browser()
-                try:
-                    new_page = await browser.new_page()
-                    ui_data = await scrape_profile_page_with_page(new_page, username)
-                finally:
-                    await new_page.close()
-                    await browser.close()
-                    await playwright_instance.stop()
+                profile_data = scrape_profile_page(profile_res.text, username)
             
             # Combine all data
             complete_data = {
                 "user": username,
-                **submissions_data,
-                **ui_data
+                **api_data,
+                **profile_data
             }
             
+            logger.info(f"Successfully scraped user {username}")
             return complete_data
         
         except Exception as e:
+            logger.error(f"Error fetching complete data for {username}: {e}")
             return {
                 "user": username,
                 "error": str(e)

@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import re
 from collections import defaultdict
-from headers_config import get_headers
+from .headers_config import get_headers
 
 def get_codechef_profile(username):
     """

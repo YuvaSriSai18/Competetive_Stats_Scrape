@@ -25,30 +25,30 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize Firebase Admin SDK
+db = None
 try:
     firebase_admin.get_app()
+    db = firestore.client()
 except ValueError:
     # App not initialized yet
     firebase_creds_json = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
     if not firebase_creds_json:
-        logger.error("❌ FIREBASE_CREDENTIALS_JSON environment variable not found. Cannot initialize Firebase.")
-        raise ValueError("FIREBASE_CREDENTIALS_JSON not set in environment variables")
-    
-    try:
-        # Parse the JSON string into a dictionary
-        creds_dict = json.loads(firebase_creds_json)
-        # Initialize Firebase with the parsed credentials
-        creds = credentials.Certificate(creds_dict)
-        firebase_admin.initialize_app(creds)
-        logger.info("✓ Firebase Admin SDK initialized successfully")
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON in FIREBASE_CREDENTIALS_JSON: {str(e)}")
-        raise ValueError(f"Invalid JSON format in FIREBASE_CREDENTIALS_JSON: {str(e)}")
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize Firebase: {str(e)}")
-        raise
-
-db = firestore.client()
+        logger.warning("⚠️ FIREBASE_CREDENTIALS_JSON not set. Firebase will not be available. Set it for production.")
+    else:
+        try:
+            # Parse the JSON string into a dictionary
+            creds_dict = json.loads(firebase_creds_json)
+            # Initialize Firebase with the parsed credentials
+            creds = credentials.Certificate(creds_dict)
+            firebase_admin.initialize_app(creds)
+            db = firestore.client()
+            logger.info("✓ Firebase Admin SDK initialized successfully")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Invalid JSON in FIREBASE_CREDENTIALS_JSON: {str(e)}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Firebase: {str(e)}")
+except Exception as e:
+    logger.warning(f"⚠️ Error initializing Firebase: {str(e)}")
 
 # Load secret key for API security
 SCRAPING_SECRET_KEY = os.environ.get("SCRAPING_SECRET_KEY", "")
@@ -110,6 +110,9 @@ def create_scraping_tasks() -> List[Dict[str, Any]]:
     Returns:
         List of task dictionaries containing: institutionId, docId, platform, username
     """
+    if db is None:
+        raise RuntimeError("Firestore database not initialized. Cannot create scraping tasks.")
+    
     tasks = []
     try:
         # Use collectionGroup query to fetch all coding_stats across all institutions
@@ -470,6 +473,15 @@ def scrape_coding_stats(x_secret_key: str = Header(..., description="Secret key 
     """
     # Verify secret key header
     verify_secret_header(x_secret_key)
+    
+    # Check if Firebase is initialized
+    if db is None:
+        return {
+            "status": "error",
+            "message": "Firebase not initialized. Set FIREBASE_CREDENTIALS_JSON environment variable.",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
     try:
         logger.info("Starting batch scraping operation from /scrape-coding-stats endpoint")
         
@@ -558,7 +570,7 @@ def github_stats(username: str = Query(..., description="GitHub username")):
     return result
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))   # Render assigns PORT automatically
+    port = int(os.environ.get("PORT", 5001))   # Render assigns PORT automatically
     uvicorn.run("main:app", host="0.0.0.0", port=port)
 # load_dotenv()
 

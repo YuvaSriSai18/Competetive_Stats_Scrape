@@ -1,7 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
-from headers_config import get_headers
+from .headers_config import get_headers
 
 load_dotenv()
 

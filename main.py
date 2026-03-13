@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 import firebase_admin
 from firebase_admin import credentials, firestore
+import json
 
 load_dotenv()
 
@@ -28,8 +29,24 @@ try:
     firebase_admin.get_app()
 except ValueError:
     # App not initialized yet
-    creds = credentials.Certificate(os.environ.get("FIREBASE_CREDENTIALS_PATH", "credentials.json"))
-    firebase_admin.initialize_app(creds)
+    firebase_creds_json = os.environ.get("FIREBASE_CREDENTIALS_JSON", "")
+    if not firebase_creds_json:
+        logger.error("❌ FIREBASE_CREDENTIALS_JSON environment variable not found. Cannot initialize Firebase.")
+        raise ValueError("FIREBASE_CREDENTIALS_JSON not set in environment variables")
+    
+    try:
+        # Parse the JSON string into a dictionary
+        creds_dict = json.loads(firebase_creds_json)
+        # Initialize Firebase with the parsed credentials
+        creds = credentials.Certificate(creds_dict)
+        firebase_admin.initialize_app(creds)
+        logger.info("✓ Firebase Admin SDK initialized successfully")
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ Invalid JSON in FIREBASE_CREDENTIALS_JSON: {str(e)}")
+        raise ValueError(f"Invalid JSON format in FIREBASE_CREDENTIALS_JSON: {str(e)}")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize Firebase: {str(e)}")
+        raise
 
 db = firestore.client()
 
@@ -438,7 +455,7 @@ def process_scraping_tasks_concurrent(
     return summary
 
 
-@app.post("/scrape-coding-stats")
+@app.get("/scrape-coding-stats")
 def scrape_coding_stats(x_secret_key: str = Header(..., description="Secret key for endpoint security")):
     """
     Scrape coding statistics for all users across all institutions.

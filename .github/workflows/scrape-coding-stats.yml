@@ -26,6 +26,7 @@ jobs:
         run: |
           curl -X POST \
             -H "Content-Type: application/json" \
+            -H "X-Secret-Key: ${{ secrets.SCRAPING_SECRET_KEY }}" \
             --max-time 900 \
             --retry 3 \
             --retry-delay 10 \
@@ -34,6 +35,7 @@ jobs:
             "${{ secrets.SCRAPING_ENDPOINT_URL }}/scrape-coding-stats"
         env:
           SCRAPING_ENDPOINT_URL: ${{ secrets.SCRAPING_ENDPOINT_URL }}
+          SCRAPING_SECRET_KEY: ${{ secrets.SCRAPING_SECRET_KEY }}
 
       - name: Log success
         if: success()
@@ -47,43 +49,3 @@ jobs:
           echo "✗ Scraping job failed"
           echo "Failed at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           exit 1
-
-      - name: Send Slack notification on success
-        if: success()
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "✓ Coding Stats Scraping Completed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Coding Stats Scraping* ✓\n*Status:* Success\n*Time:* $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-                  }
-                }
-              ]
-            }
-        continue-on-error: true
-
-      - name: Send Slack notification on failure
-        if: failure()
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          payload: |
-            {
-              "text": "✗ Coding Stats Scraping Failed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Coding Stats Scraping* ✗\n*Status:* Failed\n*Time:* $(date -u +'%Y-%m-%d %H:%M:%S UTC')\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
-            }
-        continue-on-error: true

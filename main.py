@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from modules.codechef_module import get_codechef_profile
@@ -33,6 +33,11 @@ except ValueError:
 
 db = firestore.client()
 
+# Load secret key for API security
+SCRAPING_SECRET_KEY = os.environ.get("SCRAPING_SECRET_KEY", "")
+if not SCRAPING_SECRET_KEY:
+    logger.warning("⚠️ SCRAPING_SECRET_KEY not set. Set it in .env for production security.")
+
 app = FastAPI()
 
 # Enable CORS
@@ -43,6 +48,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def verify_secret_header(x_secret_key: str = Header(...)):
+    """
+    Verify the secret key header for secure endpoint access.
+    
+    Args:
+        x_secret_key: Secret key provided in X-Secret-Key header
+        
+    Raises:
+        HTTPException: If secret key is missing or invalid
+    """
+    if not SCRAPING_SECRET_KEY:
+        logger.warning("⚠️ Scraping endpoint called but SCRAPING_SECRET_KEY not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: SCRAPING_SECRET_KEY not set"
+        )
+    
+    if x_secret_key != SCRAPING_SECRET_KEY:
+        logger.error(f"🚫 Unauthorized scraping attempt with invalid secret key")
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or missing secret key"
+        )
+    
+    return x_secret_key
+
 
 @app.get("/")
 def home():
@@ -396,7 +428,7 @@ def process_scraping_tasks_concurrent(
         "failed": failed,
         "skipped": skipped,
         "timestamp": datetime.utcnow().isoformat(),
-        # "results": results
+        "results": results
     }
     
     logger.info(
@@ -407,15 +439,20 @@ def process_scraping_tasks_concurrent(
 
 
 @app.post("/scrape-coding-stats")
-def scrape_coding_stats():
+def scrape_coding_stats(x_secret_key: str = Header(..., description="Secret key for endpoint security")):
     """
     Scrape coding statistics for all users across all institutions.
     Uses Firestore collectionGroup query to fetch all coding_stats documents
     and processes them concurrently.
     
+    Headers Required:
+        X-Secret-Key: Must match SCRAPING_SECRET_KEY environment variable
+    
     Returns:
         Dictionary with batch processing results and statistics
     """
+    # Verify secret key header
+    verify_secret_header(x_secret_key)
     try:
         logger.info("Starting batch scraping operation from /scrape-coding-stats endpoint")
         

@@ -447,8 +447,7 @@ def process_scraping_tasks_concurrent(
         "successful": successful,
         "failed": failed,
         "skipped": skipped,
-        "timestamp": datetime.utcnow().isoformat(),
-        "results": results
+        "timestamp": datetime.utcnow().isoformat()
     }
     
     logger.info(

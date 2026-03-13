@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 import re
 from collections import defaultdict
+from headers_config import get_headers
 
 def get_codechef_profile(username):
     """
@@ -16,7 +17,7 @@ def get_codechef_profile(username):
     - Participated contest details with rankings, scores, and dates
     """
     url = f"https://www.codechef.com/users/{username}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = get_headers("codechef")
 
     try:
         res = requests.get(url, headers=headers, timeout=10)

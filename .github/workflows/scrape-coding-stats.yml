@@ -1,0 +1,89 @@
+name: Scrape Coding Stats (24h Schedule)
+
+on:
+  schedule:
+    # Runs every 24 hours at 00:00 UTC
+    - cron: '0 0 * * *'
+  
+  # Allow manual trigger from Actions tab
+  workflow_dispatch:
+
+jobs:
+  scrape-stats:
+    runs-on: ubuntu-latest
+    name: Trigger Coding Stats Scraping
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log workflow start
+        run: |
+          echo "Starting coding stats scraping job"
+          echo "Triggered at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: Call scraping endpoint
+        run: |
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            --max-time 900 \
+            --retry 3 \
+            --retry-delay 10 \
+            --retry-max-time 60 \
+            --fail-with-body \
+            "${{ secrets.SCRAPING_ENDPOINT_URL }}/scrape-coding-stats"
+        env:
+          SCRAPING_ENDPOINT_URL: ${{ secrets.SCRAPING_ENDPOINT_URL }}
+
+      - name: Log success
+        if: success()
+        run: |
+          echo "✓ Scraping job completed successfully"
+          echo "Completed at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+
+      - name: Log failure
+        if: failure()
+        run: |
+          echo "✗ Scraping job failed"
+          echo "Failed at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          exit 1
+
+      - name: Send Slack notification on success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "✓ Coding Stats Scraping Completed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Coding Stats Scraping* ✓\n*Status:* Success\n*Time:* $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+                  }
+                }
+              ]
+            }
+        continue-on-error: true
+
+      - name: Send Slack notification on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          payload: |
+            {
+              "text": "✗ Coding Stats Scraping Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Coding Stats Scraping* ✗\n*Status:* Failed\n*Time:* $(date -u +'%Y-%m-%d %H:%M:%S UTC')\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+        continue-on-error: true

@@ -1,14 +1,13 @@
 import requests
 import json
 from bs4 import BeautifulSoup as bs
+from headers_config import get_headers
 
 def get_gfg_stats(username):
     PRACTICE_URL = f'https://auth.geeksforgeeks.org/user/{username}/practice/'
     PROFILE_URL = f'https://www.geeksforgeeks.org/user/{username}/'
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers = get_headers("gfg")
 
     # 1. Get practice page for problem stats
     profilePage = requests.get(PRACTICE_URL, headers=headers)

@@ -241,6 +241,7 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
     """
     Worker function to scrape data for a single platform and update Firestore.
     Calls the appropriate scraper based on platform type.
+    Skips scraping if less than 24 hours have passed since lastUpdated.
     
     Args:
         task: Dictionary with institutionId, docId, platform, username, firestoreRef
@@ -260,10 +261,36 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
         "username": username,
         "success": False,
         "data": None,
-        "error": None
+        "error": None,
+        "skipped": False
     }
     
     try:
+        # Check if 24 hours have passed since lastUpdated
+        doc_data = firestore_ref.get().to_dict()
+        last_updated = doc_data.get("lastUpdated")
+        
+        if last_updated:
+            # Handle both datetime objects and timestamps
+            if hasattr(last_updated, 'timestamp'):
+                # It's a datetime object
+                last_updated_time = last_updated
+            else:
+                # It's already a python datetime
+                last_updated_time = last_updated
+            
+            current_time = datetime.utcnow()
+            time_diff = current_time - last_updated_time
+            
+            # Check if less than 24 hours have passed
+            if time_diff.total_seconds() < 86400:  # 86400 seconds = 24 hours
+                result["skipped"] = True
+                logger.info(
+                    f"⊘ Platform: {platform} | Username: {username} | "
+                    f"Institution: {institution_id} | Status: Skipped (last updated {time_diff.total_seconds() / 3600:.1f}h ago)"
+                )
+                return result
+        
         scraped_data = None
         
         # Route to correct scraper function based on platform
@@ -316,6 +343,7 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
+
 def process_scraping_tasks_concurrent(
     tasks: List[Dict[str, Any]], 
     max_workers: int = 5
@@ -333,6 +361,7 @@ def process_scraping_tasks_concurrent(
     results = []
     successful = 0
     failed = 0
+    skipped = 0
     
     logger.info(f"Starting concurrent processing with {max_workers} workers for {len(tasks)} tasks")
     
@@ -345,7 +374,9 @@ def process_scraping_tasks_concurrent(
                     result = future.result()
                     results.append(result)
                     
-                    if result["success"]:
+                    if result.get("skipped"):
+                        skipped += 1
+                    elif result["success"]:
                         successful += 1
                     else:
                         failed += 1
@@ -363,12 +394,13 @@ def process_scraping_tasks_concurrent(
         "total_tasks": len(tasks),
         "successful": successful,
         "failed": failed,
+        "skipped": skipped,
         "timestamp": datetime.utcnow().isoformat(),
-        "results": results
+        # "results": results
     }
     
     logger.info(
-        f"Batch scraping completed: {successful} successful, {failed} failed out of {len(tasks)} tasks"
+        f"Batch scraping completed: {successful} successful, {failed} failed, {skipped} skipped out of {len(tasks)} tasks"
     )
     
     return summary

@@ -1,6 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
+from headers_config import get_headers
 
 load_dotenv()
 
@@ -19,7 +20,7 @@ def get_github_profile(username):
     public_repos = 0  # Default fallback
 
     try:
-        rest_headers = {"User-Agent": "Mozilla/5.0"}
+        rest_headers = get_headers("github").copy()
         if GITHUB_TOKEN:
             rest_headers["Authorization"] = f"token {GITHUB_TOKEN}"
 

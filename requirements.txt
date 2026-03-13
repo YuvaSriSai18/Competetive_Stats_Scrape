@@ -3,4 +3,6 @@ uvicorn[standard]
 requests
 beautifulsoup4
 python-dotenv
+lxml
+httpx
 firebase-admin

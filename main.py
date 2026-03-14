@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 import firebase_admin
 from firebase_admin import credentials, firestore
+from firebase_admin.firestore import DELETE_FIELD
 import json
 import time
 
@@ -287,7 +288,6 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
     """
     Worker function to scrape data for a single platform and update Firestore.
     Calls the appropriate scraper based on platform type.
-    Skips scraping if less than 24 hours have passed since lastUpdated.
     
     Args:
         task: Dictionary with institutionId, docId, platform, username, firestoreRef
@@ -312,31 +312,6 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
     }
     
     try:
-        # Check if 24 hours have passed since lastUpdated
-        doc_data = firestore_ref.get().to_dict()
-        last_updated = doc_data.get("lastUpdated")
-        
-        if last_updated:
-            # Handle both datetime objects and timestamps
-            if hasattr(last_updated, 'timestamp'):
-                # It's a datetime object
-                last_updated_time = last_updated
-            else:
-                # It's already a python datetime
-                last_updated_time = last_updated
-            
-            current_time = datetime.utcnow()
-            time_diff = current_time - last_updated_time
-            
-            # Check if less than 24 hours have passed
-            if time_diff.total_seconds() < 86400:  # 86400 seconds = 24 hours
-                result["skipped"] = True
-                logger.info(
-                    f"⊘ Platform: {platform} | Username: {username} | "
-                    f"Institution: {institution_id} | Status: Skipped (last updated {time_diff.total_seconds() / 3600:.1f}h ago)"
-                )
-                return result
-        
         scraped_data = None
         
         # Route to correct scraper function based on platform
@@ -353,6 +328,10 @@ def scrape_worker(task: Dict[str, Any]) -> Dict[str, Any]:
         
         # Prepare update data with proper structure for this platform
         update_data = prepare_firestore_update(platform, scraped_data, institution_id)
+        
+        # Add successful status and remove any previous error field
+        update_data["scrapingStatus"] = "success"
+        update_data["lastScrapingError"] = DELETE_FIELD
         
         # Use set() with merge=True to preserve existing metadata fields
         firestore_ref.set(update_data, merge=True)
